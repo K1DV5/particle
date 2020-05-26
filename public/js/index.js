@@ -42,7 +42,7 @@ class Template {
     }
 
     updateMass() {
-        let r = this.inMass.value / 6
+        let r = this.inMass.value / 10
         this.point.setAttribute('r', r)
         this.negative.setAttribute('x1', 50 - r)
         this.negative.setAttribute('x2', 50 + r)
@@ -83,7 +83,7 @@ class Template {
         if (!this.inSticky.checked) {
             let angle = Number(this.inDirection.value) * Math.PI / 180
             velocityX = velocity * Math.cos(angle)
-            velocityY = velocity * Math.sin(angle)
+            velocityY = - velocity * Math.sin(angle)  // y direction is down
         }
         return {
             mass: Number(this.inMass.value),
@@ -99,23 +99,20 @@ class Template {
 class Point {
     constructor(x, y, props, xMax, yMax) {
         for (let [key, val] of Object.entries(props)) this[key] = val
-        this.x = x
-        this.y = y
-        this.xMax = xMax
-        this.yMax = yMax
-        this.lastTime = 0
+        this.x = x, this.y = y
+        this.xMax = xMax, this.yMax = yMax
     }
 
     draw(cx, duration) {
         this.wall()
-        this.x += this.velocityX * duration / 1000
-        this.y -= this.velocityY * duration / 1000 // y coordinate is down
+        duration /= 1000
+        this.x += this.velocityX * duration
+        this.y += this.velocityY * duration
         cx.fillStyle = this.fill
         cx.lineWidth = 2
         cx.moveTo(this.x, this.y)
         cx.beginPath()
-        // circle (x, y, r, theta)
-        cx.arc(this.x, this.y, this.r, 0, 2 * Math.PI)
+        cx.arc(this.x, this.y, this.r, 0, 2 * Math.PI) // circle
         cx.fill()
         if (this.stroke !== 'none') {
             cx.strokeStyle = this.stroke
@@ -130,17 +127,26 @@ class Point {
         }
     }
 
-    wall() {  // make sure to clear from the wall
-        if (this.x - this.r < 0 && this.velocityX < 0 || this.x + this.r > this.xMax && this.velocityX > 0) {
-            this.velocityX *= -1
-        }
-        if (this.y - this.r < 0 && this.velocityY > 0 || this.y + this.r > this.yMax && this.velocityY < 0) {
-            this.velocityY *= -1
+    wall(point, angle) {  // make sure to clear from the wall or wall like points
+        if (point === undefined) {  // outer walls
+            if (this.x - this.r < 0) this.x = 0 + this.r
+            if (this.x + this.r > this.xMax) this.x = this.xMax - this.r
+            if (this.x - this.r === 0 && this.velocityX < 0 || this.x + this.r === this.xMax && this.velocityX > 0)
+                this.velocityX *= -1
+            if (this.y - this.r < 0) this.y = 0 + this.r
+            if (this.y + this.r > this.yMax) this.y = this.yMax - this.r
+            if (this.y - this.r === 0 && this.velocityY < 0 || this.y + this.r === this.yMax && this.velocityY > 0)
+                this.velocityY *= -1
+        } else {  // sticky points
+            let direction = Math.atan2(point.velocityY, point.velocityX) + angle // relative
+            let velocity = Math.sqrt(point.velocityX ** 2 + point.velocityY ** 2)
+            let velocityX = -Math.cos(direction) * velocity, velocityY = Math.sin(direction) * velocity
+            direction = Math.atan2(velocityY, velocityX) - angle // after
+            point.velocityX = Math.cos(direction) * velocity, point.velocityY = Math.sin(direction) * velocity
         }
     }
 
-    separate(other, distance) {  // separate overlapping points
-        let angle = Math.atan2(other.y - this.y, other.x - this.x)
+    separate(other, angle, distance) {  // separate overlapping points
         let difference = this.r + other.r - distance
         if (other.velocityX === false) {
             if (this.velocityX === false) return
@@ -153,26 +159,21 @@ class Point {
         return angle
     }
 
-    collide(other, angle) {
+    getDistAngle(other) {
+        let distance = Math.sqrt((this.x - other.x) ** 2 + (this.y - other.y) ** 2)
+        let angle = Math.atan2(other.y - this.y, other.x - this.x)
+        return [distance, angle]
+    }
+
+    collide(other) {
+        let [distance, angle] = this.getDistAngle(other)
+        if (distance > this.r + other.r) return
+        this.separate(other, angle, distance)
+        if (this.velocityX === false) return other.velocityX !== false && this.wall(other, angle)
+        else if (other.velocityX === false) return this.wall(this, angle)
         // change the coordinate system to collision angle => y-axis is collision line
-        if (this.velocityX === false) {
-            if (other.velocityX === false) return
-            let direction = Math.atan2(other.velocityY, other.velocityX) + angle // relative
-            let velocity = Math.sqrt(other.velocityX ** 2 + other.velocityY ** 2)
-            let velocityX = -Math.cos(direction) * velocity, velocityY = Math.sin(direction) * velocity
-            direction = Math.atan2(velocityY, velocityX) - angle // after
-            other.velocityX = Math.cos(direction) * velocity, other.velocityY = Math.sin(direction) * velocity
-            return
-        } else if (other.velocityX === false) {
-            let direction = Math.atan2(this.velocityY, this.velocityX) + angle // relative
-            let velocity = Math.sqrt(this.velocityX ** 2 + this.velocityY ** 2)
-            let velocityX = -Math.cos(direction) * velocity, velocityY = Math.sin(direction) * velocity
-            direction = Math.atan2(velocityY, velocityX) - angle // after
-            this.velocityX = Math.cos(direction) * velocity, this.velocityY = Math.sin(direction) * velocity
-            return
-        }
-        let directionThis = Math.atan2(this.velocityY, this.velocityX) + angle // relative
-        let directionOther = Math.atan2(other.velocityY, other.velocityX) + angle // relative
+        let directionThis = Math.atan2(this.velocityY, this.velocityX) - angle // relative
+        let directionOther = Math.atan2(other.velocityY, other.velocityX) - angle // relative
         let velocityThis = Math.sqrt(this.velocityX ** 2 + this.velocityY ** 2)
         let velocityXThis = Math.cos(directionThis) * velocityThis, velocityYThis = Math.sin(directionThis) * velocityThis
         let velocityOther = Math.sqrt(other.velocityX ** 2 + other.velocityY ** 2)
@@ -184,18 +185,29 @@ class Point {
         velocityXThis = (momentum - other.mass * deltaV) / (this.mass + other.mass) // after
         velocityXOther = deltaV + velocityXThis // after
         // Y velocities same, no impact, proceed to after
-        velocityThis = Math.sqrt(velocityXThis ** 2 + velocityYThis ** 2) // after
-        directionThis = Math.atan2(velocityYThis, velocityXThis) - angle // after
-        velocityOther = Math.sqrt(velocityXOther ** 2 + velocityYOther ** 2) // after
-        directionOther = Math.atan2(velocityYOther, velocityXOther) - angle // after
+        velocityThis = Math.sqrt(velocityXThis ** 2 + velocityYThis ** 2)
+        directionThis = Math.atan2(velocityYThis, velocityXThis) + angle
+        velocityOther = Math.sqrt(velocityXOther ** 2 + velocityYOther ** 2)
+        directionOther = Math.atan2(velocityYOther, velocityXOther) + angle
         this.velocityX = Math.cos(directionThis) * velocityThis, this.velocityY = Math.sin(directionThis) * velocityThis
         other.velocityX = Math.cos(directionOther) * velocityOther, other.velocityY = Math.sin(directionOther) * velocityOther
     }
 
-    interact(other) {
-        let distance = Math.sqrt((this.x - other.x) ** 2 + (this.y - other.y) ** 2)
-        if (distance < this.r + other.r) {
-            this.collide(other, this.separate(other, distance))
+    attract(other) {
+        let [distance, angle] = this.getDistAngle(other)
+        if (distance < this.r + other.r) return this.collide(other)
+        if (Math.abs(this.x - other.x) * 6 < this.r + other.r || Math.abs(this.y - other.y) * 6 < this.r + other.r) return
+        let force = 90 * this.charge * other.charge / distance ** 2
+        // using coulomb's law, k=90
+        let forceX = force * Math.cos(angle)
+        let forceY = force * Math.sin(angle)
+        if (this.velocityX !== false) {
+            this.velocityX -= forceX / this.mass
+            this.velocityY -= forceY / this.mass
+        }
+        if (other.velocityX !== false) {
+            other.velocityX += forceX / other.mass
+            other.velocityY += forceY / other.mass
         }
     }
 }
@@ -218,10 +230,11 @@ class Collection {
         this.updateArea()
         this.lastTime = 0
         this.speedFactor = 1
+        this.interact = 'collide'
     }
 
     updateTemp() {  // update temperature scale
-        let temperature = this.points.reduce((temp, point) => temp + Math.sqrt(point.velocityX**2 + point.velocityY**2), 0) / 10
+        let temperature = this.points.reduce((temp, point) => temp + Math.sqrt(point.velocityX ** 2 + point.velocityY ** 2), 0) / 10
         this.cx.fillStyle = 'yellow'
         this.cx.fillText(temperature + ' \u00B0C', 0, 10)
     }
@@ -241,7 +254,7 @@ class Collection {
         this.lastAdd = now
         let props = this.template.get()
         let point = new Point(x, y, props, this.cx.canvas.width, this.cx.canvas.height)
-        for (let other of this.points) point.interact(other)
+        for (let other of this.points) point[this.interact](other)
         this.points.push(point)
         point.draw(this.cx, 0)
     }
@@ -253,7 +266,7 @@ class Collection {
         for (let i = 0; i < iLast; i++) {
             let point = this.points[i]
             for (let j = i + 1; j < length; j++) {
-                point.interact(this.points[j])
+                point[this.interact](this.points[j])
             }
         }
         let duration = time - this.lastTime
@@ -282,3 +295,12 @@ document.querySelector('#startop').addEventListener('click', () => collection.sp
 window.addEventListener('keypress', event => event.key == ' ' && collection.speed())
 document.querySelector('#faster').addEventListener('click', () => collection.speed(2))
 document.querySelector('#slower').addEventListener('click', () => collection.speed(.5))
+document.querySelector('#contact').addEventListener('click', event => {
+    if (collection.interact === 'attract') {
+        collection.interact = 'collide'
+        event.target.innerText = 'By charge'
+    } else {
+        collection.interact = 'attract'
+        event.target.innerText = 'By contact'
+    }
+})
