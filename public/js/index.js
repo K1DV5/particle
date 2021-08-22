@@ -171,10 +171,11 @@ class Point {
     separate(other, angle, distance) {  // separate overlapping points
         let difference = this.r + other.r - distance
         if (other.velocityX === null) { // other is wall
-            if (this.velocityX === null) return
+            if (this.velocityX === null) return // both walls
+            // this moves
             this.x -= difference * Math.cos(angle)
             this.y -= difference * Math.sin(angle)
-        } else {
+        } else { // both move
             other.x += difference * Math.cos(angle)
             other.y += difference * Math.sin(angle)
         }
@@ -244,23 +245,22 @@ class Point {
         other.velocityX = Math.cos(directionOther) * velocityOther, other.velocityY = Math.sin(directionOther) * velocityOther
     }
 
+    accelerate(forceX, forceY) {
+        if (this.velocityX === null) return
+        // prevent high speeds as well
+        let max = 300
+        this.velocityX = (Math.abs(this.velocityX) < max ? this.velocityX : this.velocityX < 0 ? -max : max) + forceX / this.mass
+        this.velocityY = (Math.abs(this.velocityY) < max ? this.velocityY : this.velocityY < 0 ? -max : max) + forceY / this.mass
+    }
+
     attract(other) {
         let [distance, angle] = this.getDistAngle(other)
-        // if (distance < this.r + other.r) return this.collide(other)
-        if (distance < this.r + other.r) this.separate(other, angle, distance)  // prevent overlapping
-        // if (Math.abs(this.x - other.x) * 6 < this.r + other.r || Math.abs(this.y - other.y) * 6 < this.r + other.r) return
-        let force = 90 * this.charge * other.charge / distance ** 2
+        if (distance < this.r + other.r) this.separate(other, angle, distance) // prevent overlapping
         // using coulomb's law, k=90
-        let forceX = force * Math.cos(angle)
-        let forceY = force * Math.sin(angle)
-        if (this.velocityX !== null) {
-            this.velocityX -= forceX / this.mass
-            this.velocityY -= forceY / this.mass
-        }
-        if (other.velocityX !== null) {
-            other.velocityX += forceX / other.mass
-            other.velocityY += forceY / other.mass
-        }
+        let force = 90 * this.charge * other.charge / distance ** 2
+        let forceX = force * Math.cos(angle), forceY = force * Math.sin(angle)
+        this.accelerate(-forceX, -forceY)
+        other.accelerate(forceX, forceY)
     }
 }
 
